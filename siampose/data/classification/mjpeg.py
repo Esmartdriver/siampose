@@ -15,13 +15,14 @@ from torch.utils.data.dataloader import DataLoader
 
 class MjpegDataset(torch.utils.data.Dataset):
     
-    def __init__(self, path: str, transform=None, single_image_mode=False, crop_height=224, crop_width=224, min_scale=0.6, max_scale=1.6) -> None:
+    def __init__(self, path: str, transform=None, single_image_mode=False, crop_height=224, crop_width=224, min_scale=0.6, max_scale=1.6, only_crops=True) -> None:
         self.unlabelled_files = natsorted(glob.glob(os.path.join(path, "unlabelled/*.jpg")))
         self.single_image_mode = single_image_mode
         self.file_map = {}
         self.crop_width, self.crop_height = crop_width, crop_height
         self.min_scale = min_scale
         self.max_scale = max_scale
+        self.only_crops = only_crops
         self._build_sequence_id_map()
         self._build_file_map()
         self.transform = transform
@@ -106,7 +107,7 @@ class MjpegDataset(torch.utils.data.Dataset):
             nearby_frame_index = np.clip(frame_index-gap, 1, last_index)
         return nearby_frame_index 
 
-    @param
+    @property
     def seq_subset(self):
         return natsorted(list(self.sequence_id_map))
 
@@ -130,10 +131,13 @@ class MjpegDataset(torch.utils.data.Dataset):
             nearby_filename = self.sequence_id_map[sample["sequence"]][nearby_index]
             img2 = self._fast_read(nearby_filename)
             crop2 = self.random_video_crop(img2, xc, yc)
-            crops = (crop1, crop2)
+            crops =[crop1, crop2]
             if self.transform:
                 crops = [self.transform(crop) for crop in crops]
+            assert len(crops)==2
             sample["crops"] = crops
+            if self.only_crops:
+                del sample["image"]
             return sample
 IMAGENET_MEAN_STD = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
 
@@ -143,7 +147,7 @@ class MjpegDataModule(pytorch_lightning.LightningDataModule):
         data_dir,
         batch_size=512,
         image_size=224,
-        num_workers=6,
+        num_workers=8,
         pairing="next",
         dryrun=False,
     ):
