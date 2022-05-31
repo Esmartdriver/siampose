@@ -7,7 +7,7 @@ import shutil
 import sys
 from typing import OrderedDict
 from torch.nn.modules.linear import Identity
-from traitlets.traitlets import default
+#from traitlets.traitlets import default
 import yaml
 
 import mlflow
@@ -15,6 +15,7 @@ from yaml import load
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 
+from siampose.data.classification.mjpeg import MjpegDataModule
 from siampose.train import train, load_mlflow, STAT_FILE_NAME
 from siampose.utils.hp_utils import check_and_log_hp
 from siampose.models.model_loader import load_model
@@ -201,7 +202,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
         hyper_params,
     )
 
-    if hyper_params["seed"] is not None:
+    if hyper_params["seed"] is not None and hyper_params["seed"]!="None":
         set_seed(hyper_params["seed"])
 
     if "precision" not in hyper_params:
@@ -260,6 +261,9 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             dryrun=args.dryrun,
         )
         dm.setup()  # In order to have the sample count.
+    elif args.data_module=="mjpeg":
+        dm = MjpegDataModule(data_dir=data_dir, batch_size=hyper_params["batch_size"])
+        dm.setup()
 
     # se
 
