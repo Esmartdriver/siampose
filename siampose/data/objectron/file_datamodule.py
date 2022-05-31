@@ -11,9 +11,9 @@ import pytorch_lightning
 import typing
 from torch.utils.data.dataloader import DataLoader
 
-imagenet_mean_std = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
+IMAGENET_MEAN_STD = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
 import torchvision.transforms as T
-from torchvision.transforms.transforms import RandomResizedCrop, Scale
+from torchvision.transforms.transforms import RandomResizedCrop, Resize
 
 
 @concurrent
@@ -353,7 +353,7 @@ class ObjectronFileDataModule(pytorch_lightning.LightningDataModule):
             # self.seq_subset = self.sequence_list
 
     def get_objectron_transform(
-        self, image_size, mean_std=imagenet_mean_std, evaluation=False
+        self, image_size, mean_std=IMAGENET_MEAN_STD, evaluation=False
     ):
         if not evaluation:
             # hflip = T.RandomHorizontalFlip()
