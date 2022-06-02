@@ -112,16 +112,6 @@ def train_impl(
     callbacks.extend(
         [
             pl_bolts.callbacks.PrintTableMetricsCallback(),
-            ModelCheckpointLastOnly(
-                dirpath=output,
-                filename="last-{epoch}-{step}",
-                # verbose=use_progress_bar,
-                # monitor=hyper_params["early_stop_metric"],
-                # mode="max", #We have to hack arround to save the last checkpoint apparently!
-                verbose=True,
-                # save_top_k=3, #Just make sure that we save the last checkpoint.
-                # save_last=True,
-            ),
         ]
     )
 
@@ -135,7 +125,8 @@ def train_impl(
         gpus=torch.cuda.device_count(),
         auto_select_gpus=True,
         precision=hyper_params["precision"],
-        amp_level="O1",
+        #amp_backend="apex",
+        #amp_level="O1",
         accelerator=None,
         accumulate_grad_batches=hyper_params.get("accumulate_grad_batches", 1),
     )

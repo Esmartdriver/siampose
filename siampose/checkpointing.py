@@ -16,7 +16,7 @@ import torch
 import yaml
 
 from pytorch_lightning.callbacks.base import Callback
-from pytorch_lightning.metrics.metric import Metric
+from torchmetrics import Metric
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_only, rank_zero_warn
 from pytorch_lightning.utilities.cloud_io import get_filesystem
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
@@ -198,14 +198,14 @@ class ModelCheckpointLastOnly(Callback):
         # ):
         #    return
 
-        self._add_backward_monitor_support(trainer)
-        self._validate_monitor_key(trainer)
+        #self._add_backward_monitor_support(trainer)
+        # self._validate_monitor_key(trainer)
 
         # track epoch when ckpt was last checked
         self._last_global_step_saved = global_step
 
         # what can be monitored
-        monitor_candidates = self._monitor_candidates(trainer)
+        # monitor_candidates = self._monitor_candidates(trainer)
 
         # callback supports multiple simultaneous modes
         # here we call each mode sequentially
@@ -214,7 +214,7 @@ class ModelCheckpointLastOnly(Callback):
         #    self._save_top_k_checkpoints(trainer, pl_module, monitor_candidates)
 
         # Mode 2: save the last checkpoint
-        self._save_last_checkpoint(trainer, pl_module, monitor_candidates)
+        self._save_last_checkpoint(trainer, pl_module)
 
     def __validate_init_configuration(self):
         if self.save_top_k is not None and self.save_top_k < -1:
@@ -502,7 +502,7 @@ class ModelCheckpointLastOnly(Callback):
         )
         return ckpt_name_metrics
 
-    def _save_last_checkpoint(self, trainer, pl_module, ckpt_name_metrics):
+    def _save_last_checkpoint(self, trainer, pl_module):
         should_save_last = True  # We want to save!
         # if not should_save_last:
         #    return
@@ -513,7 +513,7 @@ class ModelCheckpointLastOnly(Callback):
                 self.CHECKPOINT_NAME_LAST,
                 trainer.current_epoch,
                 trainer.global_step,
-                ckpt_name_metrics,
+                # ckpt_name_metrics,
                 prefix=self.prefix,
             )
             last_filepath = os.path.join(
@@ -521,7 +521,7 @@ class ModelCheckpointLastOnly(Callback):
             )
         else:
             last_filepath = self._get_metric_interpolated_filepath_name(
-                ckpt_name_metrics,
+                # ckpt_name_metrics,
                 trainer.current_epoch,
                 trainer.global_step,
                 trainer,
