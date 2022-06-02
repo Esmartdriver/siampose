@@ -262,7 +262,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
         )
         dm.setup()  # In order to have the sample count.
     elif args.data_module=="mjpeg":
-        dm = MjpegDataModule(data_dir=data_dir, batch_size=hyper_params["batch_size"])
+        dm = MjpegDataModule(data_dir=data_dir, batch_size=hyper_params["batch_size"], num_workers=hyper_params["num_workers"])
         dm.setup()
 
     # se
