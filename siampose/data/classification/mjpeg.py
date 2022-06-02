@@ -212,7 +212,7 @@ class MjpegDataModule(pytorch_lightning.LightningDataModule):
         num_workers=8,
         pairing="next",
         dryrun=False,
-        labelled_only=False,  # Usefull when generating embeddings
+        generate_embeddings=False,  # Usefull when generating embeddings
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -222,23 +222,44 @@ class MjpegDataModule(pytorch_lightning.LightningDataModule):
         self.num_workers = num_workers
         self.pairing = pairing
         self.dryrun = dryrun
+        self.generate_embeddings = generate_embeddings
 
     def setup(self, stage=None):
         if not self.issetup:
             self.train_transform = self.get_transform(self.image_size)
             self.eval_transform = self.get_transform(self.image_size, evaluation=True)
-            self.train_dataset = MjpegDataset(
-                os.path.join(self.data_dir, "training"),
-                transform=self.train_transform,
-            )
-            self.val_dataset = MjpegDataset(
-                os.path.join(self.data_dir, "validation"),
-                transform=self.eval_transform,
-            )
-            self.test_dataset = MjpegDataset(
-                os.path.join(self.data_dir, "test"),
-                transform=self.eval_transform,
-            )
+            if not self.generate_embeddings:
+                self.train_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "training"),
+                    transform=self.train_transform,
+                )
+                self.val_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "validation"),
+                    transform=self.eval_transform,
+                )
+                self.test_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "test"),
+                    transform=self.eval_transform,
+                )
+            else:
+                self.train_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "training"),
+                    transform=self.train_transform,
+                    labelled_only=True,
+                    single_image_mode=True,
+                )
+                self.val_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "validation"),
+                    transform=self.eval_transform,
+                    labelled_only=True,
+                    single_image_mode=True,
+                )
+                self.test_dataset = MjpegDataset(
+                    os.path.join(self.data_dir, "test"),
+                    transform=self.eval_transform,
+                    labelled_only=True,
+                    single_image_mode=True,
+                )
             self.train_sample_count = len(self.train_dataset)
             self.valid_sample_count = len(self.val_dataset)
             self.issetup = True
