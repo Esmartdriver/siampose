@@ -1,9 +1,10 @@
+from calendar import c
 from siampose.data.classification.mjpeg import MjpegDataset, MjpegDataModule
 import numpy as np
 import torch
 import os
 import cv2
-
+from PIL import Image
 INTERACTIVE=False
 def test_test():
     assert True
@@ -12,9 +13,16 @@ def test_test():
 def test_random_video_crop():
     dataset = MjpegDataset("test/data/mjpeg/training", single_image_mode=True)
     img = dataset[0]["image"]
-    h, w , c = img.shape
+    if not isinstance(img, np.ndarray):
+        h, w = img.height, img.width
+    else:
+        h, w , c = img.shape
     crop = dataset.random_video_crop(img, w//2, h//2)
-    crop_h, crop_w, _ = crop.shape
+    if not isinstance(img, np.ndarray):
+        crop_w, crop_h = crop.width, crop.height
+    else:
+        crop_h, crop_w, _ = crop.shape
+        
     assert dataset.min_scale*crop_w < crop_w < dataset.max_scale*crop_w
     assert dataset.min_scale*crop_h < crop_h < dataset.max_scale*crop_h
 
@@ -36,7 +44,7 @@ def test_get_nearby_frame_index():
     assert dataset.sequence_id_map[seq_id][dataset.get_frame_index(filename)]==filename
 
 def test_dataset_unlabelled_single_mode():
-    dataset = MjpegDataset("test/data/mjpeg/training", single_image_mode=True)
+    dataset = MjpegDataset("test/data/mjpeg/training", single_image_mode=True, only_crops=False)
     assert len(dataset.unlabelled_files) > 0
     assert len(dataset) == 11
     assert "image" in dataset[0]
@@ -48,7 +56,7 @@ def test_dataset_unlabelled_single_mode():
 
     for sample in dataset:
         assert "image" in sample
-        assert isinstance(sample["image"], np.ndarray)
+        assert isinstance(sample["image"], Image.Image)
         if INTERACTIVE:
             cv2.imshow("test", sample["image"])
             cv2.waitKey(1)
@@ -60,12 +68,11 @@ def test_dataset_unlabelled():
     assert len(dataset.unlabelled_files) > 0
     assert len(dataset) == 11
     sample = dataset[0]
-    assert "image" in sample
     assert "sequence" in sample
     assert "crops" in sample
     crop1, crop2 =  sample["crops"]
-    assert crop1.shape != crop2.shape
-    assert isinstance(crop1, np.ndarray)
+    assert crop1.width != crop2.width
+    assert isinstance(crop1, Image.Image)
     transform = transforms.Compose([
          transforms.ToTensor(),
          transforms.Resize((224,224)),
@@ -86,8 +93,30 @@ def test_mjpeg_data_module():
     dm = MjpegDataModule("test/data/mjpeg")
     dm.setup()
     assert dm is not None
+    sample = dm.train_dataset[0]
+    assert sample is not None
     for sample in dm.train_dataset:
         assert sample["crops"] is not None
     dataloader = dm.train_dataloader()
     for sample in dataloader:
         assert sample["crops"] is not None
+        crop1, crop2 = sample["crops"]
+        assert crop1.shape == (11, 3, 224,224)
+        assert crop2.shape == (11, 3, 224, 224)
+
+def test_mjpeg_data_module_full():
+    dm = MjpegDataModule("/home/raphael/esmart/esmart-ai-datasets/data/esmart_mjpeg/")
+    dm.setup()
+    assert dm is not None
+    for sample in dm.train_dataset:
+        assert sample["crops"] is not None
+        crop1, crop2 = sample["crops"]
+        assert crop1.shape==crop2.shape
+        assert crop1.shape==(3,224,224)
+
+    dataloader = dm.train_dataloader()
+    for sample in dataloader:
+        assert sample["crops"] is not None
+        crop1, crop2 = sample["crops"]
+        assert crop1.shape == (11, 3, 224,224)
+        assert crop2.shape == (11, 3, 224, 224)
