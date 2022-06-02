@@ -7,7 +7,8 @@ import shutil
 import sys
 from typing import OrderedDict
 from torch.nn.modules.linear import Identity
-#from traitlets.traitlets import default
+
+# from traitlets.traitlets import default
 import yaml
 
 import mlflow
@@ -44,22 +45,17 @@ def main():
     # __TODO__ check you need all the following CLI parameters
     parser.add_argument(
         "--config",
-        help="config file with generic hyper-parameters,  such as optimizer, "
-        "batch_size, ... -  in yaml format",
+        help="config file with generic hyper-parameters,  such as optimizer, " "batch_size, ... -  in yaml format",
     )
     parser.add_argument("--data", help="path to data", required=True)
-    parser.add_argument(
-        "--data-module", default="hdf5", help="Data module to use. file or hdf5"
-    )
+    parser.add_argument("--data-module", default="hdf5", help="Data module to use. file or hdf5")
     parser.add_argument(
         "--tmp-folder",
         help="will use this folder as working folder - it will copy the input data "
         "here, generate results here, and then copy them back to the output "
         "folder",
     )
-    parser.add_argument(
-        "--output", help="path to outputs - will store files here", required=True
-    )
+    parser.add_argument("--output", help="path to outputs - will store files here", required=True)
     parser.add_argument(
         "--disable-progressbar",
         action="store_true",
@@ -202,7 +198,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
         hyper_params,
     )
 
-    if hyper_params["seed"] is not None and hyper_params["seed"]!="None":
+    if hyper_params["seed"] is not None and hyper_params["seed"] != "None":
         set_seed(hyper_params["seed"])
 
     if "precision" not in hyper_params:
@@ -226,9 +222,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             tuple_length=hyper_params.get("tuple_length"),
             frame_offset=hyper_params.get("frame_offset"),
             tuple_offset=hyper_params.get("tuple_offset"),
-            keep_only_frames_with_valid_kpts=hyper_params.get(
-                "keep_only_frames_with_valid_kpts"
-            ),
+            keep_only_frames_with_valid_kpts=hyper_params.get("keep_only_frames_with_valid_kpts"),
             input_height=hyper_params.get("input_height"),
             gaussian_blur=hyper_params.get("gaussian_blur"),
             jitter_strength=hyper_params.get("jitter_strength"),
@@ -261,9 +255,12 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             dryrun=args.dryrun,
         )
         dm.setup()  # In order to have the sample count.
-    elif args.data_module=="mjpeg":
+    elif args.data_module == "mjpeg":
         dm = MjpegDataModule(data_dir=data_dir, batch_size=hyper_params["batch_size"], num_workers=hyper_params["num_workers"])
         dm.setup()
+
+    elif args.data_module == "folder":
+        raise NotADirectoryError
 
     # se
 
@@ -303,9 +300,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
 
     if args.embeddings or args.embeddings_test:
         if args.embeddings_ckpt is None:
-            raise ValueError(
-                "Please manually provide the checkpoints using the --embeddings-ckpt argument"
-            )
+            raise ValueError("Please manually provide the checkpoints using the --embeddings-ckpt argument")
         model = load_model(hyper_params, checkpoint=args.embeddings_ckpt)
         special = False
         if "SPECIAL:" not in args.embeddings_ckpt:
@@ -316,15 +311,11 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             else:
                 model.load_state_dict(ckpt["state_dict"])
         elif args.embeddings_ckpt == "SPECIAL:IMAGENET":
-            model.online_network.encoder = torch.hub.load(
-                "pytorch/vision:v0.6.0", "resnet50", pretrained=True
-            )
+            model.online_network.encoder = torch.hub.load("pytorch/vision:v0.6.0", "resnet50", pretrained=True)
             model.online_network.encoder.fc = Identity()
             special = True
         elif args.embeddings_ckpt == "SPECIAL:RANDOM":
-            model.online_network.encoder = torch.hub.load(
-                "pytorch/vision:v0.6.0", "resnet50", pretrained=False
-            )
+            model.online_network.encoder = torch.hub.load("pytorch/vision:v0.6.0", "resnet50", pretrained=False)
             model.online_network.encoder.fc = Identity()
             special = True
         else:
@@ -361,9 +352,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
                 prefix="test_",
             )
     else:
-        save_list_to_file(
-            f"{output_dir}/train_sequences.txt", dm.train_dataset.seq_subset
-        )
+        save_list_to_file(f"{output_dir}/train_sequences.txt", dm.train_dataset.seq_subset)
         save_list_to_file(f"{output_dir}/val_sequences.txt", dm.val_dataset.seq_subset)
         model = load_model(hyper_params)
         setattr(model, "_tbx_logger", tbx_logger)
@@ -386,14 +375,10 @@ import torch.nn.functional as F
 import numpy as np
 
 
-def generate_embeddings(
-    args, model, datamodule, train=True, image_size=224, special=False, prefix=None
-):
+def generate_embeddings(args, model, datamodule, train=True, image_size=224, special=False, prefix=None):
     assert prefix is not None
     if train:
-        dataloader = datamodule.train_dataloader(
-            evaluation=True
-        )  # Do not use data augmentation for evaluation.
+        dataloader = datamodule.train_dataloader(evaluation=True)  # Do not use data augmentation for evaluation.
         dataset = datamodule.train_dataset
         # prefix="train_"
     else:
