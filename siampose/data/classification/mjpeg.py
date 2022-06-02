@@ -1,4 +1,5 @@
 # Motion JPEG dataloader. Allows reading motion JPEG videos as unlabelled data.
+from re import I
 from pytest import param
 import torch
 import glob
@@ -12,6 +13,7 @@ import numpy as np
 import pytorch_lightning
 import torchvision.transforms as T
 from torch.utils.data.dataloader import DataLoader
+from PIL import Image
 
 class MjpegDataset(torch.utils.data.Dataset):
     
@@ -28,12 +30,19 @@ class MjpegDataset(torch.utils.data.Dataset):
         self.transform = transform
 
     def random_video_crop(self,img, xc, yc):
-        h, w, _= img.shape
+        if not isinstance(img, np.ndarray):
+            h, w = img.height, img.width
+        else:
+            h, w, _= img.shape
         crop_w = int(np.clip(np.random.uniform(self.crop_width*self.min_scale, self.crop_width*self.max_scale), 0, h))
         crop_h = int(np.clip(np.random.uniform(self.crop_height*self.min_scale, self.crop_height*self.max_scale), 0, w))
         x1, y1 = int(np.clip(xc-crop_w/2, 0, w-1)), int(np.clip(yc-crop_h/2, 0, h-1))
         x2, y2 = int(np.clip(xc+crop_w/2, 0, w-1)), int(np.clip(yc+crop_h/2, 0, h-1))
-        crop = img[y1:y2,x1:x2]
+        if isinstance(img, np.ndarray):
+            crop = img[y1:y2,x1:x2]
+        else: # Assume Pillow Image
+            img: Image.Image
+            crop = img.crop([x1,y1, x2, y2])
         return crop
 
     def __len__(self):
@@ -47,7 +56,9 @@ class MjpegDataset(torch.utils.data.Dataset):
                 self.sequence_id_map[sequence_id] = [file]
             else:
                 self.sequence_id_map[sequence_id].append(file)
+    
     def _fast_read(self, filename):
+        assert False
         img = cv2.imread(filename)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img_rgb
@@ -79,7 +90,8 @@ class MjpegDataset(torch.utils.data.Dataset):
         return self.get_single_file(filename)
 
     def get_single_file(self, filename):
-        img = self._fast_read(filename)
+        #img = self._fast_read(filename)
+        img = Image.open(filename)
         sample = {
             "image" : img,
             "sequence": self._get_sequence_id(filename),
@@ -123,13 +135,18 @@ class MjpegDataset(torch.utils.data.Dataset):
         else:
             # Crop pairs!
             sample = base_sample
+
             img1 = sample["image"]
-            h, w, c= img1.shape
+            if isinstance(img1, np.ndarray):
+                h, w, c= img1.shape
+            else:
+                img1: Image.Image
+                h, w = img1.height, img1.width
             xc, yc = self.random_normal_center(w, h)
             crop1 = self.random_video_crop(img1, xc, yc)
             nearby_index = self._get_nearby_frame_index(sample["path"])
             nearby_filename = self.sequence_id_map[sample["sequence"]][nearby_index]
-            img2 = self._fast_read(nearby_filename)
+            img2 = Image.open(nearby_filename)
             crop2 = self.random_video_crop(img2, xc, yc)
             crops =[crop1, crop2]
             if self.transform:
@@ -192,7 +209,7 @@ class MjpegDataModule(pytorch_lightning.LightningDataModule):
             transform_list = [
                 # T.RandomResizedCrop(image_size, scale=(0.2, 1.0)),
                 # hflip,
-                T.ToTensor(),
+                # 
                 T.Resize((image_size,image_size)),
                 T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
                 T.RandomGrayscale(p=0.2),
@@ -204,11 +221,13 @@ class MjpegDataModule(pytorch_lightning.LightningDataModule):
                     ],
                     p=p_blur,
                 ),
+                T.ToTensor(),
                 T.Normalize(*mean_std),
+                
             ]
             return T.Compose(transform_list)
         else:
-            return T.Compose([ T.ToTensor(), T.Resize((image_size,image_size)), T.Normalize(*mean_std)])
+            return T.Compose([  T.Resize((image_size,image_size)), T.ToTensor(), T.Normalize(*mean_std), ])
 
     def train_dataloader(self, evaluation=False) -> DataLoader:
         self.train_dataset.transform = self.train_transform
