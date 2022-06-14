@@ -256,7 +256,12 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
         )
         dm.setup()  # In order to have the sample count.
     elif args.data_module == "mjpeg":
-        dm = MjpegDataModule(data_dir=data_dir, batch_size=hyper_params["batch_size"], num_workers=hyper_params["num_workers"])
+        dm = MjpegDataModule(
+            data_dir=data_dir,
+            batch_size=hyper_params["batch_size"],
+            num_workers=hyper_params["num_workers"],
+            generate_embeddings=args.embeddings,  # Use labelled crops instead of random crops from full unlabelled frames.
+        )
         dm.setup()
 
     elif args.data_module == "folder":
@@ -396,15 +401,24 @@ def generate_embeddings(args, model, datamodule, train=True, image_size=224, spe
 
     # train_labels = torch.zeros(max_batch*args.batch_size, dtype=torch.int64).cuda()
     all_targets = []
-    sequence_uids = []
+    meta_data = []
     with torch.no_grad():
         batch_num = 0
         for batch_idx, batch in enumerate(local_progress):
-            images1 = batch["OBJ_CROPS"][0]
+            if "OBJ_CROPS" in batch:
+                images1 = batch["OBJ_CROPS"][0]
+                meta = batch["UID"]
+                targets = batch["CAT_ID"]
+            elif "crops" in batch:
+                assert not "image" in batch
+                raise NotADirectoryError("To do: Implement MJPEG automatic crops")
+            elif "image" in batch:
+                images1 = batch["image"]
+                targets = batch["category_id"]
+                meta = batch["filename"]
             if batch_idx == 0:
                 save_mosaic("embeddings.png", images1)
-            meta = batch["UID"]
-            targets = batch["CAT_ID"]
+
             # images1, _, meta= data
             # images1, _ = images
             images1 = images1.to(args.embeddings_device, non_blocking=True)
@@ -431,13 +445,13 @@ def generate_embeddings(args, model, datamodule, train=True, image_size=224, spe
             all_features[:, base : base + len(images1)] = features.t().cpu()
             # train_labels[base:base+len(images)]=labels
             all_targets += targets.cpu().numpy().tolist()
-            sequence_uids += meta
+            meta_data += meta
             batch_num += 1
             # if batch_num >= max_batch:
             #    break
 
     np.save(f"{args.output}/{prefix}embeddings.npy", all_features.cpu().numpy())
-    train_info = np.vstack([np.array(all_targets), np.array(sequence_uids)])
+    train_info = np.vstack([np.array(all_targets), np.array(meta_data)])
     np.save(f"{args.output}/{prefix}info.npy", train_info)
 
 

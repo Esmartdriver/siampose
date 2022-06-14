@@ -14,6 +14,7 @@ import pytorch_lightning
 import torchvision.transforms as T
 from torch.utils.data.dataloader import DataLoader
 from PIL import Image
+import json
 
 IMAGENET_MEAN_STD = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
 
@@ -24,27 +25,31 @@ class MjpegDataset(torch.utils.data.Dataset):
         path: str,
         transform=None,
         single_image_mode=False,
-        crop_height=224,
-        crop_width=224,
-        min_scale=0.6,
-        max_scale=1.6,
+        crop_height=64,
+        crop_width=64,
+        min_scale=1,
+        max_scale=5,
+        center_sampling="uniform",
         only_crops=True,
         include_labelled=False,
         labelled_only=False,
     ) -> None:
+        self.center_sampling = center_sampling
+
         if labelled_only:
             self.unlabelled_files = []
+            include_labelled = True
         else:
             self.unlabelled_files = natsorted(glob.glob(os.path.join(path, "unlabelled/*.jpg")))
         self.files = []
-        self.labelled_files = {}
+        self.labelled_files_map = {}
         if include_labelled:
             for folder in natsorted(glob.glob(os.path.join(path, "*"))):
                 if os.path.isdir(folder):
                     category = folder.split("/")[-1]
                     if category == "unlabelled":
                         continue
-                    self.labelled_files[category] = natsorted(glob.glob(os.path.join(path, f"{category}/*.jpg")))
+                    self.labelled_files_map[category] = natsorted(glob.glob(os.path.join(path, f"{category}/*.jpg")))
 
         self.single_image_mode = single_image_mode
         self.file_map = {}
@@ -61,8 +66,30 @@ class MjpegDataset(torch.utils.data.Dataset):
 
     def _build_index(self):
         self.files = self.unlabelled_files
-        for category in self.labelled_files:
-            self.files += self.labelled_files[category]
+        for category in self.labelled_files_map:
+
+            self.files += self.labelled_files_map[category]
+
+    def random_bbox_crop(self, img, x1, y1, x2, y2):
+        if not isinstance(img, np.ndarray):
+            im_h, im_w = img.height, img.width
+        else:
+            im_h, im_w, _ = img.shape
+        xc, yc = (x1 + x2) // 2, (y1 + y2) // 2
+        h, w = abs(x2 - x1), abs(y2 - y1)
+        # CROP_WITDH, CROP_HEIGHT = 32, 32
+        MIN_SCALE = 1
+        MAX_SCALE = 4
+        crop_w = int(np.clip(np.random.uniform(w * MIN_SCALE, w * MAX_SCALE), 0, im_h))
+        crop_h = int(np.clip(np.random.uniform(h * MIN_SCALE, h * MAX_SCALE), 0, im_w))
+        x1, y1 = int(np.clip(xc - crop_w / 2, 0, im_w - 1)), int(np.clip(yc - crop_h / 2, 0, im_h - 1))
+        x2, y2 = int(np.clip(xc + crop_w / 2, 0, im_w - 1)), int(np.clip(yc + crop_h / 2, 0, im_h - 1))
+        if isinstance(img, np.ndarray):
+            crop = img[y1:y2, x1:x2]
+        else:  # Assume Pillow Image
+            img: Image.Image
+            crop = img.crop([x1, y1, x2, y2])
+        return crop
 
     def random_video_crop(self, img, xc, yc):
         if not isinstance(img, np.ndarray):
@@ -94,6 +121,8 @@ class MjpegDataset(torch.utils.data.Dataset):
 
     def _build_file_map(self):
         self.file_map = {}
+        self.sequence_uid_map = {}
+        # sequence_uid=0
         for idx, file in enumerate(tqdm(self.unlabelled_files)):
             basename = os.path.basename(file)
             sequence_id = self._get_sequence_id(file)
@@ -104,6 +133,7 @@ class MjpegDataset(torch.utils.data.Dataset):
                 "frame_index": self.sequence_id_map[sequence_id].index(file),
                 "idx": idx,
             }
+            # if sequence_id not in
 
     def _get_sequence_id(self, filename):
         basename = os.path.basename(filename)
@@ -122,7 +152,7 @@ class MjpegDataset(torch.utils.data.Dataset):
         else:  # Remove the "object ID" also
             frame_number = basename.split("_")[-2].replace(".jpg", "")
 
-        return int(frame_number)
+        return int(float(frame_number))
 
     def get_single_item(self, idx):
         filename = self.files[idx]
@@ -131,12 +161,15 @@ class MjpegDataset(torch.utils.data.Dataset):
     def get_single_file(self, filename):
         # img = self._fast_read(filename)
         img = Image.open(filename)
+        category = self._get_category(filename)
         sample = {
             "image": img,
             "sequence": self._get_sequence_id(filename),
             "path": filename,
             "frame_numer": self._get_frame_number(filename),
-            "category": self._get_category(filename),
+            "category": category,
+            "category_id": self.categories.index(category),
+            "filename": filename,
         }
         return sample
 
@@ -166,6 +199,17 @@ class MjpegDataset(torch.utils.data.Dataset):
     def seq_subset(self):
         return natsorted(list(self.sequence_id_map))
 
+    @property
+    def categories(self):
+        categories_list = ["unlabelled"]
+        categories_list += natsorted(list(self.labelled_files_map))
+        return categories_list
+
+    def random_uniform_center(self, w, h):
+        xc = int(np.random.uniform(0, w))
+        yc = int(np.random.uniform(0, h))
+        return xc, yc
+
     def random_normal_center(self, w, h, std_dev=3):
         xc = int(np.clip(np.random.normal(w / 2, w / std_dev), 0, w - 1))
         yc = int(np.clip(np.random.normal(h / 2, h / std_dev), 0, h - 1))
@@ -182,17 +226,23 @@ class MjpegDataset(torch.utils.data.Dataset):
             sample = base_sample
 
             img1 = sample["image"]
-            if isinstance(img1, np.ndarray):
-                h, w, c = img1.shape
+            json_file = sample["filename"].replace(".jpg", ".json")
+            prediction = None
+            if os.path.exists(json_file) and random.random() < 0.5:
+                with open(json_file) as f:
+                    predictions = json.load(f)
+                if len(predictions) > 0:
+                    prediction = random.sample(predictions, 1)[0]
+            if prediction is None:
+                crop1, crop2 = self.random_video_pair_crops(sample, img1)
             else:
-                img1: Image.Image
-                h, w = img1.height, img1.width
-            xc, yc = self.random_normal_center(w, h)
-            crop1 = self.random_video_crop(img1, xc, yc)
-            nearby_index = self._get_nearby_frame_index(sample["path"])
-            nearby_filename = self.sequence_id_map[sample["sequence"]][nearby_index]
-            img2 = Image.open(nearby_filename)
-            crop2 = self.random_video_crop(img2, xc, yc)
+                x1, y1, x2, y2 = prediction["bbox"]
+                crop1 = self.random_bbox_crop(img1, x1, y1, x2, y2)
+
+                nearby_index = self._get_nearby_frame_index(sample["path"])
+                nearby_filename = self.sequence_id_map[sample["sequence"]][nearby_index]
+                # img2 = Image.open(nearby_filename)
+                crop2 = self.random_bbox_crop(img1, x1, y1, x2, y2)
             crops = [crop1, crop2]
             if self.transform:
                 crops = [self.transform(crop) for crop in crops]
@@ -201,6 +251,25 @@ class MjpegDataset(torch.utils.data.Dataset):
             if self.only_crops:
                 del sample["image"]
             return sample
+
+    def random_video_pair_crops(self, sample, img1):
+        if isinstance(img1, np.ndarray):
+            h, w, c = img1.shape
+        else:
+            img1: Image.Image
+            h, w = img1.height, img1.width
+        if self.center_sampling == "uniform":
+            xc, yc = self.random_uniform_center(w, h)
+        elif self.center_sampling == "normal":
+            xc, yc = self.random_normal_center(w, h)
+        else:
+            raise NotADirectoryError(f"Sampling {self.center_sampling} not enabled.")
+        crop1 = self.random_video_crop(img1, xc, yc)
+        nearby_index = self._get_nearby_frame_index(sample["path"])
+        nearby_filename = self.sequence_id_map[sample["sequence"]][nearby_index]
+        img2 = Image.open(nearby_filename)
+        crop2 = self.random_video_crop(img2, xc, yc)
+        return crop1, crop2
 
 
 class MjpegDataModule(pytorch_lightning.LightningDataModule):

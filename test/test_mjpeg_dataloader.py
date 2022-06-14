@@ -29,8 +29,8 @@ def test_random_video_crop():
     else:
         crop_h, crop_w, _ = crop.shape
 
-    assert dataset.min_scale * crop_w < crop_w < dataset.max_scale * crop_w
-    assert dataset.min_scale * crop_h < crop_h < dataset.max_scale * crop_h
+    assert dataset.min_scale * crop_w <= crop_w <= dataset.max_scale * crop_w
+    assert dataset.min_scale * crop_h <= crop_h <= dataset.max_scale * crop_h
 
 
 def test_dataset_get_sequence_id_and_frame_number():
@@ -57,12 +57,12 @@ def test_get_nearby_frame_index():
 def test_dataset_unlabelled_single_mode():
     dataset = MjpegDataset("test/data/mjpeg/training", single_image_mode=True, only_crops=False)
     assert len(dataset.unlabelled_files) > 0
-    assert len(dataset) == 11
+    assert len(dataset) == 12
     assert "image" in dataset[0]
     assert "sequence" in dataset[0]
-    assert dataset[0]["sequence"] == "20210723_172608"
+    assert dataset[1]["sequence"] == "20210723_172608"
     assert os.path.basename(dataset[0]["path"]) != dataset[0]["path"]
-    assert len(dataset.sequence_id_map) == 4
+    assert len(dataset.sequence_id_map) == 5
     assert len(dataset.file_map) == len(dataset)
 
     for sample in dataset:
@@ -79,7 +79,7 @@ import torchvision.transforms as transforms
 def test_dataset_unlabelled():
     dataset = MjpegDataset("test/data/mjpeg/training", transform=None)
     assert len(dataset.unlabelled_files) > 0
-    assert len(dataset) == 11
+    assert len(dataset) == 12
     sample = dataset[0]
     assert "sequence" in sample
     assert "crops" in sample
@@ -107,7 +107,7 @@ def test_dataset_unlabelled():
 def test_dataset_labelled():
     dataset = MjpegDataset("test/data/mjpeg/training", transform=None, include_labelled=True, single_image_mode=True)
     assert len(dataset.unlabelled_files) > 0
-    assert len(dataset) == 17
+    assert len(dataset) == 18
     sample = dataset[0]
     assert "sequence" in sample
     assert "crops" not in sample
@@ -178,8 +178,8 @@ def test_mjpeg_data_module():
     for sample in dataloader:
         assert sample["crops"] is not None
         crop1, crop2 = sample["crops"]
-        assert crop1.shape == (11, 3, 224, 224)
-        assert crop2.shape == (11, 3, 224, 224)
+        assert crop1.shape == (12, 3, 224, 224)
+        assert crop2.shape == (12, 3, 224, 224)
 
 
 import pytest
