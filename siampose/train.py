@@ -23,10 +23,7 @@ def train(**kwargs):  # pragma: no cover
     except RuntimeError as err:
         if orion.client.cli.IS_ORION_ON and "CUDA out of memory" in str(err):
             logger.error(err)
-            logger.error(
-                "model was out of memory - assigning a bad score to tell Orion to avoid"
-                "too big model"
-            )
+            logger.error("model was out of memory - assigning a bad score to tell Orion to avoid" "too big model")
             best_dev_metric = -999
         else:
             raise err
@@ -100,28 +97,20 @@ def train_impl(
             verbose=use_progress_bar,
             mode="auto",
         )
-        best_checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        checkpoints_callback = pl.callbacks.ModelCheckpoint(
             dirpath=output,
+            save_last=True,
+            every_n_epochs=10,
             filename="best-{epoch}-{step}",
             monitor=hyper_params["early_stop_metric"],
             verbose=use_progress_bar,
             mode="auto",
         )
-        callbacks.extend([early_stopping, best_checkpoint_callback])
+        callbacks.extend([early_stopping, checkpoints_callback])
 
     callbacks.extend(
         [
             pl_bolts.callbacks.PrintTableMetricsCallback(),
-            ModelCheckpointLastOnly(
-                dirpath=output,
-                filename="last-{epoch}-{step}",
-                # verbose=use_progress_bar,
-                # monitor=hyper_params["early_stop_metric"],
-                # mode="max", #We have to hack arround to save the last checkpoint apparently!
-                verbose=True,
-                # save_top_k=3, #Just make sure that we save the last checkpoint.
-                # save_last=True,
-            ),
         ]
     )
 
@@ -135,7 +124,8 @@ def train_impl(
         gpus=torch.cuda.device_count(),
         auto_select_gpus=True,
         precision=hyper_params["precision"],
-        amp_level="O1",
+        # amp_backend="apex",
+        # amp_level="O1",
         accelerator=None,
         accumulate_grad_batches=hyper_params.get("accumulate_grad_batches", 1),
     )

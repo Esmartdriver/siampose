@@ -367,7 +367,7 @@ class SimSiam(pl.LightningModule):
             self.triplet_loss = torch.nn.TripletMarginLoss(margin=0.2)
 
         self.monitor_accuracy = hyper_params.get(
-            "monitor_accuracy", True
+            "monitor_accuracy", False
         )  # Enabled by default. Can be disabled if it takes too much memory.
 
         self.accumulate_grad_batches_custom = hyper_params.get(
@@ -636,7 +636,10 @@ class SimSiam(pl.LightningModule):
         return loss, f1, f2
 
     def training_step(self, batch, batch_idx):
-        crops = batch["OBJ_CROPS"]
+        if "crops" in batch:
+            crops = batch["crops"]
+        else:
+            crops = batch["OBJ_CROPS"]
 
         if batch_idx == 0:
             for i, crop in enumerate(crops):
@@ -646,8 +649,12 @@ class SimSiam(pl.LightningModule):
             print("!")
 
         # assert img_1.shape==torch.Size([32, 3, 224, 224])
-        uid = batch["UID"]
-        y = batch["CAT_ID"]
+        uid = None
+        y = None
+        if "UID" in batch:
+            uid = batch["UID"]
+        if "Y" in batch:
+            y = batch["CAT_ID"]
 
         if self.cuda_train_features is not None:
             self.cuda_train_features = None  # Free GPU memory
@@ -655,7 +662,8 @@ class SimSiam(pl.LightningModule):
         loss, f1, f2 = self.compute_loss(crops)
 
         # assert train_features.shape == torch.Size([32, 2048])
-        self.train_meta += uid
+        if uid:
+            self.train_meta += uid
 
         if self.monitor_accuracy:
             base = batch_idx * self.batch_size
@@ -679,14 +687,20 @@ class SimSiam(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # assert len(batch["OBJ_CROPS"]) == 2
-        crops = batch["OBJ_CROPS"]
+        if "crops" in batch:
+            crops = batch["crops"]
+        else:
+            crops = batch["OBJ_CROPS"]
+
 
         if batch_idx == 0:
             for i, crop in enumerate(crops):
                 save_mosaic(f"img_{i}_val.jpg", crop)
 
-        uid = batch["UID"]
-        y = batch["CAT_ID"]
+        if "UID" in batch:
+            uid = batch["UID"]
+        if "Y" in batch:
+            y = batch["CAT_ID"]
 
         # Image 1 to image 2 loss
         # f1, z1, h1 = self.online_network(img_1)

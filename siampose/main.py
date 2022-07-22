@@ -7,7 +7,8 @@ import shutil
 import sys
 from typing import OrderedDict
 from torch.nn.modules.linear import Identity
-from traitlets.traitlets import default
+
+# from traitlets.traitlets import default
 import yaml
 
 import mlflow
@@ -15,6 +16,7 @@ from yaml import load
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 
+from siampose.data.classification.mjpeg import MjpegDataModule
 from siampose.train import train, load_mlflow, STAT_FILE_NAME
 from siampose.utils.hp_utils import check_and_log_hp
 from siampose.models.model_loader import load_model
@@ -43,22 +45,17 @@ def main():
     # __TODO__ check you need all the following CLI parameters
     parser.add_argument(
         "--config",
-        help="config file with generic hyper-parameters,  such as optimizer, "
-        "batch_size, ... -  in yaml format",
+        help="config file with generic hyper-parameters,  such as optimizer, " "batch_size, ... -  in yaml format",
     )
     parser.add_argument("--data", help="path to data", required=True)
-    parser.add_argument(
-        "--data-module", default="hdf5", help="Data module to use. file or hdf5"
-    )
+    parser.add_argument("--data-module", default="hdf5", help="Data module to use. file or hdf5")
     parser.add_argument(
         "--tmp-folder",
         help="will use this folder as working folder - it will copy the input data "
         "here, generate results here, and then copy them back to the output "
         "folder",
     )
-    parser.add_argument(
-        "--output", help="path to outputs - will store files here", required=True
-    )
+    parser.add_argument("--output", help="path to outputs - will store files here", required=True)
     parser.add_argument(
         "--disable-progressbar",
         action="store_true",
@@ -201,7 +198,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
         hyper_params,
     )
 
-    if hyper_params["seed"] is not None:
+    if hyper_params["seed"] is not None and hyper_params["seed"] != "None":
         set_seed(hyper_params["seed"])
 
     if "precision" not in hyper_params:
@@ -225,9 +222,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             tuple_length=hyper_params.get("tuple_length"),
             frame_offset=hyper_params.get("frame_offset"),
             tuple_offset=hyper_params.get("tuple_offset"),
-            keep_only_frames_with_valid_kpts=hyper_params.get(
-                "keep_only_frames_with_valid_kpts"
-            ),
+            keep_only_frames_with_valid_kpts=hyper_params.get("keep_only_frames_with_valid_kpts"),
             input_height=hyper_params.get("input_height"),
             gaussian_blur=hyper_params.get("gaussian_blur"),
             jitter_strength=hyper_params.get("jitter_strength"),
@@ -260,6 +255,17 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             dryrun=args.dryrun,
         )
         dm.setup()  # In order to have the sample count.
+    elif args.data_module == "mjpeg":
+        dm = MjpegDataModule(
+            data_dir=data_dir,
+            batch_size=hyper_params["batch_size"],
+            num_workers=hyper_params["num_workers"],
+            generate_embeddings=args.embeddings,  # Use labelled crops instead of random crops from full unlabelled frames.
+        )
+        dm.setup()
+
+    elif args.data_module == "folder":
+        raise NotADirectoryError
 
     # se
 
@@ -299,9 +305,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
 
     if args.embeddings or args.embeddings_test:
         if args.embeddings_ckpt is None:
-            raise ValueError(
-                "Please manually provide the checkpoints using the --embeddings-ckpt argument"
-            )
+            raise ValueError("Please manually provide the checkpoints using the --embeddings-ckpt argument")
         model = load_model(hyper_params, checkpoint=args.embeddings_ckpt)
         special = False
         if "SPECIAL:" not in args.embeddings_ckpt:
@@ -312,15 +316,11 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
             else:
                 model.load_state_dict(ckpt["state_dict"])
         elif args.embeddings_ckpt == "SPECIAL:IMAGENET":
-            model.online_network.encoder = torch.hub.load(
-                "pytorch/vision:v0.6.0", "resnet50", pretrained=True
-            )
+            model.online_network.encoder = torch.hub.load("pytorch/vision:v0.6.0", "resnet50", pretrained=True)
             model.online_network.encoder.fc = Identity()
             special = True
         elif args.embeddings_ckpt == "SPECIAL:RANDOM":
-            model.online_network.encoder = torch.hub.load(
-                "pytorch/vision:v0.6.0", "resnet50", pretrained=False
-            )
+            model.online_network.encoder = torch.hub.load("pytorch/vision:v0.6.0", "resnet50", pretrained=False)
             model.online_network.encoder.fc = Identity()
             special = True
         else:
@@ -357,9 +357,7 @@ def run(args, data_dir, output_dir, hyper_params, mlf_logger, tbx_logger):
                 prefix="test_",
             )
     else:
-        save_list_to_file(
-            f"{output_dir}/train_sequences.txt", dm.train_dataset.seq_subset
-        )
+        save_list_to_file(f"{output_dir}/train_sequences.txt", dm.train_dataset.seq_subset)
         save_list_to_file(f"{output_dir}/val_sequences.txt", dm.val_dataset.seq_subset)
         model = load_model(hyper_params)
         setattr(model, "_tbx_logger", tbx_logger)
@@ -382,14 +380,10 @@ import torch.nn.functional as F
 import numpy as np
 
 
-def generate_embeddings(
-    args, model, datamodule, train=True, image_size=224, special=False, prefix=None
-):
+def generate_embeddings(args, model, datamodule, train=True, image_size=224, special=False, prefix=None):
     assert prefix is not None
     if train:
-        dataloader = datamodule.train_dataloader(
-            evaluation=True
-        )  # Do not use data augmentation for evaluation.
+        dataloader = datamodule.train_dataloader(evaluation=True)  # Do not use data augmentation for evaluation.
         dataset = datamodule.train_dataset
         # prefix="train_"
     else:
@@ -407,15 +401,24 @@ def generate_embeddings(
 
     # train_labels = torch.zeros(max_batch*args.batch_size, dtype=torch.int64).cuda()
     all_targets = []
-    sequence_uids = []
+    meta_data = []
     with torch.no_grad():
         batch_num = 0
         for batch_idx, batch in enumerate(local_progress):
-            images1 = batch["OBJ_CROPS"][0]
+            if "OBJ_CROPS" in batch:
+                images1 = batch["OBJ_CROPS"][0]
+                meta = batch["UID"]
+                targets = batch["CAT_ID"]
+            elif "crops" in batch:
+                assert not "image" in batch
+                raise NotADirectoryError("To do: Implement MJPEG automatic crops")
+            elif "image" in batch:
+                images1 = batch["image"]
+                targets = batch["category_id"]
+                meta = batch["filename"]
             if batch_idx == 0:
                 save_mosaic("embeddings.png", images1)
-            meta = batch["UID"]
-            targets = batch["CAT_ID"]
+
             # images1, _, meta= data
             # images1, _ = images
             images1 = images1.to(args.embeddings_device, non_blocking=True)
@@ -442,13 +445,13 @@ def generate_embeddings(
             all_features[:, base : base + len(images1)] = features.t().cpu()
             # train_labels[base:base+len(images)]=labels
             all_targets += targets.cpu().numpy().tolist()
-            sequence_uids += meta
+            meta_data += meta
             batch_num += 1
             # if batch_num >= max_batch:
             #    break
 
     np.save(f"{args.output}/{prefix}embeddings.npy", all_features.cpu().numpy())
-    train_info = np.vstack([np.array(all_targets), np.array(sequence_uids)])
+    train_info = np.vstack([np.array(all_targets), np.array(meta_data)])
     np.save(f"{args.output}/{prefix}info.npy", train_info)
 
 
